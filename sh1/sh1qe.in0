@@ -1,0 +1,171 @@
+extern volatile unsigned long timer0_millis;
+
+static int8_t lookup_table[] = {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
+ 
+volatile byte half_revolutions1;
+volatile byte tot_revolutions1;
+volatile byte half_revolutions2;
+volatile byte tot_revolutions2;
+ 
+volatile int8_t enc_count1 = 0;
+volatile int8_t g_dir1 = 0;
+volatile uint8_t intcount1=0;
+
+volatile int8_t enc_count2 = 0;
+volatile int8_t g_dir2 = 0;
+volatile uint8_t intcount2=0;
+
+volatile uint8_t g_qe_delta=6;
+volatile uint8_t g_qe_num=40;
+
+volatile uint8_t g_qe_idx1=0;
+volatile uint8_t g_qe_cnt1[256]={0};
+volatile uint8_t g_qe_rpm1=40;
+
+unsigned int rpm;
+
+unsigned long timeold;
+ 
+int8_t enc1_0=0,dir1_0=0;
+uint8_t intcount1_0;
+
+int8_t enc2_0=0,dir2_0=0;
+uint8_t intcount2_0;
+
+ void qe_setup()
+ {
+   Serial.begin(115200);
+//   attachInterrupt(2, rpm_fun, RISING);
+
+//   attachInterrupt(2, rpm_fun1, CHANGE);
+//   attachInterrupt(3, rpm_fun2, CHANGE);
+   
+   attachInterrupt(2, encoder_isr1, CHANGE);
+   attachInterrupt(3, encoder_isr1, CHANGE);
+
+   attachInterrupt(4, encoder_isr2, CHANGE);
+   attachInterrupt(5, encoder_isr2, CHANGE);
+
+   half_revolutions1 = 0;
+   tot_revolutions1 = 0;
+   half_revolutions2 = 0;
+   tot_revolutions2 = 0;
+   rpm = 0;
+   timeold = 0;
+ }
+ 
+uint8_t qe_rpm1(void)
+{
+  uint8_t rpm;
+  static unsigned long t0=0;
+   
+  rpm=g_qe_rpm1;
+}
+
+ void qe_doit(void)
+{
+   if (half_revolutions1 >= 1) { 
+     //Update RPM every 20 counts, increase this for better RPM resolution,
+     //decrease for faster update
+     rpm = 30*1000/(millis() - timeold)*half_revolutions1;
+     timeold = millis();
+     half_revolutions1 = 0;
+     Serial.print("1 ");
+     Serial.print(tot_revolutions1,DEC);
+     Serial.print(" ");
+     Serial.print(tot_revolutions2,DEC);
+     Serial.print(" ");
+     Serial.println(PIND,BIN);
+     Serial.print(" ");
+     Serial.println(rpm,DEC);
+   }
+   if (half_revolutions2 >= 1) { 
+     //Update RPM every 20 counts, increase this for better RPM resolution,
+     //decrease for faster update
+     rpm = 30*1000/(millis() - timeold)*half_revolutions2;
+     timeold = millis();
+     half_revolutions2 = 0;
+     Serial.print("2 ");
+     Serial.print(tot_revolutions1,DEC);
+     Serial.print(" ");
+     Serial.print(tot_revolutions2,DEC);
+     Serial.print(" ");
+     Serial.println(PIND,BIN);
+     Serial.print(" ");
+     Serial.println(rpm,DEC);
+   }
+   
+ }
+
+ void rpm_fun1()
+ {
+   half_revolutions1++;
+   //Each rotation, this interrupt function is run twice
+   tot_revolutions1++;
+ }
+
+ void rpm_fun2()
+ {
+   half_revolutions2++;
+   //Each rotation, this interrupt function is run twice
+   tot_revolutions2++;
+ }
+
+void encoder_isr1()
+{
+  static uint8_t enc_val=0;
+  static int8_t dir1=0,dir2=0;
+  static unsigned long t0=0;
+  unsigned long tn;
+  uint8_t ei;
+  
+  enc_val = enc_val << 2;
+  enc_val = enc_val | (~PIND & 0b0011);
+
+  ei=enc_val & 0b1111;
+  dir1=lookup_table[ei];
+  if(dir1 != 0) {
+    if(dir1 != dir2) {
+      dir2=dir1;
+      t0=0;
+    }
+  }
+  
+  if((ei != 0b0001) && (ei != 0b0010)) return;
+  
+  tn=timer0_millis;
+  if(t0+g_qe_delta > tn) {
+    g_qe_cnt1[g_qe_idx1]++;
+  } else {
+    if(tn-t0 != g_qe_delta) {
+      g_qe_rpm1=0;
+      g_qe_cnt1[0]=0;
+      g_qe_idx1=0;
+    }
+    g_qe_rpm1+=g_qe_cnt1[g_qe_idx1];
+    g_qe_idx1++;
+    g_qe_idx1%=g_qe_num;
+    if(g_qe_cnt1[0] != 0) {
+      g_qe_rpm1-=g_qe_cnt1[g_qe_idx1];
+    }
+    g_qe_cnt1[g_qe_idx1]=1;
+    t0=tn;
+  }
+     
+//  enc_count1 = enc_count1 + lookup_table[enc_val & 0b1111];
+  intcount1++;  
+}
+    
+void encoder_isr2()
+{
+  static uint8_t enc_val = 0;
+  
+  enc_val = enc_val << 2;
+  enc_val = enc_val | ((~PIND & 0b1100) >> 2);
+  
+g_dir2=lookup_table[enc_val & 0b1111];
+     
+//  enc_count2 = enc_count2 + lookup_table[enc_val & 0b1111];
+  intcount2++;  
+}
+
